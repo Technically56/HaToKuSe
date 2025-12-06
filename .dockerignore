@@ -1,0 +1,5 @@
+.git
+storage_files
+bin
+*.exe
+unit_tests
