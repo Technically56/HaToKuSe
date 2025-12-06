@@ -2,4 +2,4 @@
 storage_files
 bin
 *.exe
-unit_tests
+integration_tests
