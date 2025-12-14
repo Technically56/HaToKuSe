@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -175,4 +176,36 @@ func BenchmarkWriteToFile(b *testing.B) {
 			}
 		})
 	}
+}
+func BenchmarkParallelWrites(b *testing.B) {
+	// 1. Setup
+	baseDir := setupTestDir(b)
+	defer cleanupTestDir(b, baseDir)
+
+	// Create a FileManager.
+	// Note: We use a larger lock pool (100) to reduce artificial contention
+	// during this high-intensity test.
+	fm, _ := NewFileManager(baseDir, 100)
+
+	// A shared counter to ensure every goroutine generates a unique filename
+	var nameCounter int64
+
+	// Content to write (keep it small to stress-test the locking/concurrency logic)
+	content := "This is some parallel data content."
+
+	b.ResetTimer() // Start the clock
+
+	// 2. The Parallel Loop
+	// Go will spawn multiple goroutines executing this block simultaneously
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			// Generate a unique ID for this specific write operation
+			id := atomic.AddInt64(&nameCounter, 1)
+			fileName := fmt.Sprintf("parallel_%d.txt", id)
+
+			if err := fm.WriteToFile(fileName, content); err != nil {
+				b.Errorf("Write failed: %v", err)
+			}
+		}
+	})
 }
