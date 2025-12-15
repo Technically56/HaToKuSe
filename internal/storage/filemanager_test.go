@@ -2,9 +2,12 @@ package filemanager
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,164 +15,182 @@ import (
 
 // --- Helper Functions ---
 
-// setupTestDir creates a temporary directory for testing and returns the path.
 func setupTestDir(t testing.TB) string {
-	dir, err := os.MkdirTemp("", "filemanager_test_*")
+	dir, err := os.MkdirTemp("", "fm_test_*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	return dir
 }
 
-// cleanupTestDir removes the temporary directory and all its contents.
 func cleanupTestDir(t testing.TB, dir string) {
-	err := os.RemoveAll(dir)
-	if err != nil {
-		t.Errorf("Failed to cleanup temp dir: %v", err)
-	}
+	_ = os.RemoveAll(dir)
 }
 
-// generateRandomContent creates a random string of a specific size (in bytes).
 func generateRandomContent(size int) string {
 	b := make([]byte, size)
-	_, err := rand.Read(b)
-	if err != nil {
-		panic(err)
-	}
+	_, _ = rand.Read(b)
 	return string(b)
 }
 
-// --- Tests ---
+// --- Functional Tests ---
 
-// TestConcurrentWrites simulates high concurrency to check for race conditions
-// and ensures the atomic file counter is accurate.
-func TestConcurrentWrites(t *testing.T) {
+func TestWriteAndReadIntegrity(t *testing.T) {
 	baseDir := setupTestDir(t)
 	defer cleanupTestDir(t, baseDir)
 
-	// Initialize FileManager with a small lock pool to force contention
-	lockPoolSize := int32(16)
-	fm, err := NewFileManager(baseDir, lockPoolSize)
+	// Initialize with 50 shards, direct_sync = false
+	fm, err := NewFileManager(baseDir, 100, 50, false)
 	if err != nil {
-		t.Fatalf("Failed to create FileManager: %v", err)
+		t.Fatalf("Failed to init FM: %v", err)
 	}
 
-	const numGoroutines = 50
-	const filesPerRoutine = 20
-	totalFiles := numGoroutines * filesPerRoutine
+	fileName := "integrity.txt"
+	content := "Hello, Distributed Systems!"
+
+	if err := fm.WriteToFile(fileName, content); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	readData, err := fm.ReadFromFile(fileName)
+	if err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+
+	if string(readData) != content {
+		t.Errorf("Content mismatch. Got %s, want %s", string(readData), content)
+	}
+}
+
+func TestHasFile(t *testing.T) {
+	baseDir := setupTestDir(t)
+	defer cleanupTestDir(t, baseDir)
+
+	fm, _ := NewFileManager(baseDir, 10, 10, false)
+	fileName := "exists.txt"
+	_ = fm.WriteToFile(fileName, "data")
+
+	if !fm.HasFile(fileName) {
+		t.Errorf("HasFile returned false for existing file")
+	}
+	if fm.HasFile("missing.txt") {
+		t.Errorf("HasFile returned true for missing file")
+	}
+}
+
+func TestGetFileHash(t *testing.T) {
+	baseDir := setupTestDir(t)
+	defer cleanupTestDir(t, baseDir)
+
+	fm, _ := NewFileManager(baseDir, 10, 10, false)
+	fileName := "hashed.txt"
+	content := "Hashing verification content"
+
+	if err := fm.WriteToFile(fileName, content); err != nil {
+		t.Fatal(err)
+	}
+
+	hasher := sha256.New()
+	hasher.Write([]byte(content))
+	expectedHash := hex.EncodeToString(hasher.Sum(nil))
+
+	storedHash, err := fm.GetFileHash(fileName)
+	if err != nil {
+		t.Fatalf("GetFileHash failed: %v", err)
+	}
+
+	if storedHash != expectedHash {
+		t.Errorf("Hash mismatch.\nExp: %s\nGot: %s", expectedHash, storedHash)
+	}
+}
+
+func TestDynamicSharding(t *testing.T) {
+	baseDir := setupTestDir(t)
+	defer cleanupTestDir(t, baseDir)
+
+	// Tiny shard count to force collisions
+	shardCount := uint32(2)
+	fm, _ := NewFileManager(baseDir, 10, shardCount, false)
+
+	fileName := "shard_test.txt"
+	if err := fm.WriteToFile(fileName, "data"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify file physically exists in folder "0" or "1"
+	found := false
+	for i := 0; i < int(shardCount); i++ {
+		path := filepath.Join(baseDir, fmt.Sprintf("%d", i), fileName)
+		if _, err := os.Stat(path); err == nil {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("File not found in expected shards")
+	}
+}
+
+func TestConcurrentReadWrite(t *testing.T) {
+	baseDir := setupTestDir(t)
+	defer cleanupTestDir(t, baseDir)
+
+	fm, _ := NewFileManager(baseDir, 4096, 100, false)
 
 	var wg sync.WaitGroup
-	wg.Add(numGoroutines)
+	workers := 20
+	filesPerWorker := 50
 
-	// Channel to catch errors from goroutines
-	errChan := make(chan error, totalFiles)
-
-	for i := 0; i < numGoroutines; i++ {
-		go func(routineID int) {
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(id int) {
 			defer wg.Done()
-			for j := 0; j < filesPerRoutine; j++ {
-				fileName := fmt.Sprintf("file_%d_%d.txt", routineID, j)
-				content := fmt.Sprintf("Routine %d Data %d", routineID, j)
+			for j := 0; j < filesPerWorker; j++ {
+				fileName := fmt.Sprintf("worker_%d_file_%d", id, j)
+				content := fmt.Sprintf("data_%d_%d", id, j)
 
 				if err := fm.WriteToFile(fileName, content); err != nil {
-					errChan <- fmt.Errorf("Routine %d write error: %v", routineID, err)
+					t.Errorf("Write failed: %v", err)
+					return
+				}
+				readVal, err := fm.ReadFromFile(fileName)
+				if err != nil {
+					t.Errorf("Read failed: %v", err)
+					return
+				}
+				if string(readVal) != content {
+					t.Errorf("Data corruption")
 				}
 			}
 		}(i)
 	}
-
 	wg.Wait()
-	close(errChan)
-
-	// 1. Check for write errors
-	for err := range errChan {
-		t.Error(err)
-	}
-
-	// 2. Verify Atomic Counter
-	// Note: Since we started with an empty folder, the counter should match total writes.
-	if currentCount := fm.GetFileCounter(); currentCount != int64(totalFiles) {
-		t.Errorf("Counter mismatch. Expected %d, got %d", totalFiles, currentCount)
-	}
-
-	// 3. Verify actual files on disk
-	var diskFileCount int64 = 0
-	err = filepath.Walk(baseDir, func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() {
-			diskFileCount++
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Failed to walk directory: %v", err)
-	}
-
-	if diskFileCount != int64(totalFiles) {
-		t.Errorf("Disk file count mismatch. Expected %d, found %d", totalFiles, diskFileCount)
-	}
 }
 
-// TestWriteIntegrity checks that data is written to the correct folder
-// and the content is exactly what we expect.
-func TestWriteIntegrity(t *testing.T) {
-	baseDir := setupTestDir(t)
-	defer cleanupTestDir(t, baseDir)
+// --- BENCHMARKS ---
 
-	fm, _ := NewFileManager(baseDir, 10)
-
-	fileName := "integrity_check.txt"
-	content := "This is a specific string to check integrity."
-
-	// This should be the first file, so it goes to folder "0"
-	if err := fm.WriteToFile(fileName, content); err != nil {
-		t.Fatalf("WriteToFile failed: %v", err)
-	}
-
-	// Calculate expected path based on logic: (count 1 - 1) / 1000 = 0
-	expectedSubDir := "0"
-	fullPath := filepath.Join(baseDir, expectedSubDir, fileName)
-
-	// Read file back
-	readBytes, err := os.ReadFile(fullPath)
-	if err != nil {
-		t.Fatalf("Failed to read file at %s: %v", fullPath, err)
-	}
-
-	if string(readBytes) != content {
-		t.Errorf("Content mismatch.\nExpected: %s\nGot: %s", content, string(readBytes))
-	}
-}
-
-// --- Benchmarks ---
-
-// BenchmarkWriteToFile measures performance for different file sizes.
-// It resets the environment for each sub-benchmark.
+// BenchmarkWriteToFile: Single core sequential write speed.
 func BenchmarkWriteToFile(b *testing.B) {
 	benchmarks := []struct {
 		name string
 		size int
 	}{
 		{"1KB", 1024},
-		{"100KB", 100 * 1024},
+		{"10KB", 10240},
 		{"1MB", 1024 * 1024},
-		{"10MB", 10 * 1024 * 1024},
 	}
 
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
-			// Setup per benchmark iteration
 			baseDir := setupTestDir(b)
 			defer cleanupTestDir(b, baseDir)
 
-			fm, _ := NewFileManager(baseDir, 100)
+			fm, _ := NewFileManager(baseDir, 4096, 100, false)
 			content := generateRandomContent(bm.size)
 
-			b.ResetTimer() // Start timing now
-
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				// We use unique names to simulate real logging/appending behavior
-				// rather than constantly overwriting the same file which might be cached by OS.
-				fileName := fmt.Sprintf("bench_%d.log", i)
+				fileName := "bench_" + strconv.Itoa(i) + ".dat"
 				if err := fm.WriteToFile(fileName, content); err != nil {
 					b.Fatalf("Write failed: %v", err)
 				}
@@ -177,35 +198,87 @@ func BenchmarkWriteToFile(b *testing.B) {
 		})
 	}
 }
-func BenchmarkParallelWrites(b *testing.B) {
-	// 1. Setup
+
+// BenchmarkParallelWrite: Multi-core write throughput.
+// Run with: go test -bench=ParallelWrite -cpu=1,4,8
+func BenchmarkParallelWrite(b *testing.B) {
 	baseDir := setupTestDir(b)
 	defer cleanupTestDir(b, baseDir)
 
-	// Create a FileManager.
-	// Note: We use a larger lock pool (100) to reduce artificial contention
-	// during this high-intensity test.
-	fm, _ := NewFileManager(baseDir, 100)
+	fm, _ := NewFileManager(baseDir, 4096, 1000, false)
+	content := generateRandomContent(1024)
+	var counter int64
 
-	// A shared counter to ensure every goroutine generates a unique filename
-	var nameCounter int64
-
-	// Content to write (keep it small to stress-test the locking/concurrency logic)
-	content := "This is some parallel data content."
-
-	b.ResetTimer() // Start the clock
-
-	// 2. The Parallel Loop
-	// Go will spawn multiple goroutines executing this block simultaneously
+	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			// Generate a unique ID for this specific write operation
-			id := atomic.AddInt64(&nameCounter, 1)
-			fileName := fmt.Sprintf("parallel_%d.txt", id)
-
+			id := atomic.AddInt64(&counter, 1)
+			fileName := "pwrite_" + strconv.FormatInt(id, 10) + ".dat"
 			if err := fm.WriteToFile(fileName, content); err != nil {
 				b.Errorf("Write failed: %v", err)
 			}
 		}
 	})
+}
+
+// BenchmarkReadFromFile: Single core sequential read.
+func BenchmarkReadFromFile(b *testing.B) {
+	baseDir := setupTestDir(b)
+	defer cleanupTestDir(b, baseDir)
+
+	fm, _ := NewFileManager(baseDir, 4096, 100, false)
+	content := generateRandomContent(1024)
+	fileName := "static_read.dat"
+	_ = fm.WriteToFile(fileName, content)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := fm.ReadFromFile(fileName); err != nil {
+			b.Fatalf("Read failed: %v", err)
+		}
+	}
+}
+
+// BenchmarkParallelRead: Multi-core random read throughput.
+func BenchmarkParallelRead(b *testing.B) {
+	baseDir := setupTestDir(b)
+	defer cleanupTestDir(b, baseDir)
+
+	fm, _ := NewFileManager(baseDir, 4096, 100, false)
+	content := generateRandomContent(1024)
+
+	const fileCount = 1000
+	for i := 0; i < fileCount; i++ {
+		_ = fm.WriteToFile(fmt.Sprintf("file_%d.dat", i), content)
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			fileName := fmt.Sprintf("file_%d.dat", i%fileCount)
+			if _, err := fm.ReadFromFile(fileName); err != nil {
+				b.Errorf("Read failed: %v", err)
+			}
+			i++
+		}
+	})
+}
+
+// BenchmarkGetFileHash: Measures CPU + IO cost of hashing.
+func BenchmarkGetFileHash(b *testing.B) {
+	baseDir := setupTestDir(b)
+	defer cleanupTestDir(b, baseDir)
+
+	fm, _ := NewFileManager(baseDir, 4096, 100, false)
+	content := generateRandomContent(10240) // 10KB
+	fileName := "hash_bench.dat"
+	_ = fm.WriteToFile(fileName, content)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := fm.GetFileHash(fileName); err != nil {
+			b.Fatalf("Hash failed: %v", err)
+		}
+	}
 }
