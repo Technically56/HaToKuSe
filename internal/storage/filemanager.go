@@ -2,8 +2,11 @@ package filemanager
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,14 +14,24 @@ import (
 )
 
 // Writer struct to be defined to the default messages directory of the running server.
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		// Create a buffer that writes to "io.Discard" initially
+		return bufio.NewWriterSize(io.Discard, 4096)
+	},
+}
+
 type FileManager struct {
 	folder_path  string
 	file_locks   []*sync.RWMutex
 	file_count   int64
 	folder_count int64
+	createdDirs  sync.Map
+	shard_count  uint32
+	direct_sync  bool
 }
 
-func NewFileManager(folder_path string, lock_pool_size int32) (*FileManager, error) {
+func NewFileManager(folder_path string, lock_pool_size int32, shard_count uint32, direct_sync bool) (*FileManager, error) {
 	if _, err := os.Stat(folder_path); os.IsNotExist(err) {
 		return nil, fmt.Errorf("base path does not exist: %s", folder_path)
 	}
@@ -39,7 +52,7 @@ func NewFileManager(folder_path string, lock_pool_size int32) (*FileManager, err
 	for i := range locks {
 		locks[i] = &sync.RWMutex{}
 	}
-	return &FileManager{folder_path: folder_path, folder_count: int64(folder_count), file_count: int64(file_count), file_locks: locks}, nil
+	return &FileManager{folder_path: folder_path, folder_count: int64(folder_count), file_count: int64(file_count), file_locks: locks, shard_count: shard_count, direct_sync: direct_sync}, nil
 }
 
 // file_path must be the full path to the file
@@ -50,34 +63,37 @@ func (fm *FileManager) getFileLock(file_path string) *sync.RWMutex {
 }
 
 func (fm *FileManager) WriteToFile(file_name string, file_content string) error {
-	current_counter := atomic.AddInt64(&fm.file_count, 1) - 1
+	hash := fnv.New32a()
+	hash.Write([]byte(file_name))
+	folder_id := hash.Sum32() % fm.shard_count
 
-	sub_directory := fmt.Sprintf("%d", current_counter/1000)
+	sub_directory := fmt.Sprintf("%d", folder_id)
 
 	dir_path := filepath.Join(fm.folder_path, sub_directory)
 
 	full_path := filepath.Join(dir_path, file_name)
 
-	tmp_path := full_path + ".tmp"
-
-	if err := os.MkdirAll(dir_path, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+	if _, ok := fm.createdDirs.Load(sub_directory); !ok {
+		if err := os.MkdirAll(dir_path, 0755); err != nil {
+			return err
+		}
+		fm.createdDirs.Store(sub_directory, true)
 	}
-
 	lock := fm.getFileLock(full_path)
 
 	lock.Lock()
 
 	defer lock.Unlock()
 
-	file, err := os.OpenFile(tmp_path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	file, err := os.OpenFile(full_path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 
 	if err != nil {
 		fmt.Println("Error opening file:", err)
 		return err
 	}
 
-	writer := bufio.NewWriter(file)
+	writer := bufPool.Get().(*bufio.Writer)
+	writer.Reset(file)
 
 	if _, err = writer.WriteString(file_content); err != nil {
 		//Add Error Logging To The Leader Here
@@ -92,25 +108,82 @@ func (fm *FileManager) WriteToFile(file_name string, file_content string) error 
 		return err
 	}
 
-	//if err := file.Sync(); err != nil {
-	//Add Error Logging To The Leader Here
-	//return err
-	//}
+	if fm.direct_sync {
+		if err := file.Sync(); err != nil {
+			//Add Error Logging To The Leader Here
+			return err
+		}
+	}
 
 	if err := file.Close(); err != nil {
 		//Add Error Logging To The Leader Here
 		return err
 	}
+	fm.increaseFileCounter()
+	bufPool.Put(writer)
+	return nil
+}
 
-	return os.Rename(tmp_path, full_path)
+func (fm *FileManager) ReadFromFile(file_name string) ([]byte, error) {
+	h := fnv.New32a()
+	h.Write([]byte(file_name))
+	folderID := h.Sum32() % fm.shard_count
+	sub_directory := fmt.Sprintf("%d", folderID)
+
+	full_path := filepath.Join(fm.folder_path, sub_directory, file_name)
+
+	lock := fm.getFileLock(full_path)
+	lock.RLock()
+	defer lock.RUnlock()
+
+	data, err := os.ReadFile(full_path)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func (fm *FileManager) increaseFileCounter() {
 	atomic.AddInt64(&fm.file_count, 1)
 }
 func (fm *FileManager) GetFileCounter() int64 {
-	return fm.file_count
+	return atomic.LoadInt64(&fm.file_count)
 }
 func (fm *FileManager) GetFolderCounter() int64 {
-	return fm.folder_count
+	return atomic.LoadInt64(&fm.folder_count)
+}
+func (fm *FileManager) HasFile(file_name string) bool {
+	h := fnv.New32a()
+	h.Write([]byte(file_name))
+	folderID := h.Sum32() % fm.shard_count
+	sub_directory := fmt.Sprintf("%d", folderID)
+
+	full_path := filepath.Join(fm.folder_path, sub_directory, file_name)
+	if _, err := os.Stat(full_path); err == nil {
+		return true
+	}
+	return false
+}
+func (fm *FileManager) GetFileHash(file_name string) (string, error) {
+	h := fnv.New32a()
+	h.Write([]byte(file_name))
+	folderID := h.Sum32() % fm.shard_count
+	sub_directory := fmt.Sprintf("%d", folderID)
+
+	full_path := filepath.Join(fm.folder_path, sub_directory, file_name)
+	lock := fm.getFileLock(full_path)
+	lock.RLock()
+	defer lock.RUnlock()
+
+	file, err := os.Open(full_path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return "", err
+	}
+	hashBytes := hasher.Sum(nil)
+	return hex.EncodeToString(hashBytes), nil
 }
