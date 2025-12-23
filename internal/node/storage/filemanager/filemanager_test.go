@@ -48,7 +48,7 @@ func TestWriteAndReadIntegrity(t *testing.T) {
 	fileName := "integrity.txt"
 	content := "Hello, Distributed Systems!"
 
-	if err := fm.WriteToFile(fileName, content); err != nil {
+	if _, err := fm.WriteToFile(fileName, []byte(content)); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestHasFile(t *testing.T) {
 
 	fm, _ := NewFileManager(baseDir, 10, 10, false)
 	fileName := "exists.txt"
-	_ = fm.WriteToFile(fileName, "data")
+	_, _ = fm.WriteToFile(fileName, []byte("data"))
 
 	if !fm.HasFile(fileName) {
 		t.Errorf("HasFile returned false for existing file")
@@ -86,7 +86,7 @@ func TestGetFileHash(t *testing.T) {
 	fileName := "hashed.txt"
 	content := "Hashing verification content"
 
-	if err := fm.WriteToFile(fileName, content); err != nil {
+	if _, err := fm.WriteToFile(fileName, []byte(content)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -113,7 +113,7 @@ func TestDynamicSharding(t *testing.T) {
 	fm, _ := NewFileManager(baseDir, 10, shardCount, false)
 
 	fileName := "shard_test.txt"
-	if err := fm.WriteToFile(fileName, "data"); err != nil {
+	if _, err := fm.WriteToFile(fileName, []byte("data")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -149,7 +149,7 @@ func TestConcurrentReadWrite(t *testing.T) {
 				fileName := fmt.Sprintf("worker_%d_file_%d", id, j)
 				content := fmt.Sprintf("data_%d_%d", id, j)
 
-				if err := fm.WriteToFile(fileName, content); err != nil {
+				if _, err := fm.WriteToFile(fileName, []byte(content)); err != nil {
 					t.Errorf("Write failed: %v", err)
 					return
 				}
@@ -191,7 +191,7 @@ func BenchmarkWriteToFile(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				fileName := "bench_" + strconv.Itoa(i) + ".dat"
-				if err := fm.WriteToFile(fileName, content); err != nil {
+				if _, err := fm.WriteToFile(fileName, []byte(content)); err != nil {
 					b.Fatalf("Write failed: %v", err)
 				}
 			}
@@ -214,7 +214,7 @@ func BenchmarkParallelWrite(b *testing.B) {
 		for pb.Next() {
 			id := atomic.AddInt64(&counter, 1)
 			fileName := "pwrite_" + strconv.FormatInt(id, 10) + ".dat"
-			if err := fm.WriteToFile(fileName, content); err != nil {
+			if _, err := fm.WriteToFile(fileName, []byte(content)); err != nil {
 				b.Errorf("Write failed: %v", err)
 			}
 		}
@@ -229,7 +229,7 @@ func BenchmarkReadFromFile(b *testing.B) {
 	fm, _ := NewFileManager(baseDir, 4096, 100, false)
 	content := generateRandomContent(1024)
 	fileName := "static_read.dat"
-	_ = fm.WriteToFile(fileName, content)
+	_, _ = fm.WriteToFile(fileName, []byte(content))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -249,7 +249,7 @@ func BenchmarkParallelRead(b *testing.B) {
 
 	const fileCount = 1000
 	for i := 0; i < fileCount; i++ {
-		_ = fm.WriteToFile(fmt.Sprintf("file_%d.dat", i), content)
+		_, _ = fm.WriteToFile(fmt.Sprintf("file_%d.dat", i), []byte(content))
 	}
 
 	b.ResetTimer()
@@ -273,7 +273,7 @@ func BenchmarkGetFileHash(b *testing.B) {
 	fm, _ := NewFileManager(baseDir, 4096, 100, false)
 	content := generateRandomContent(10240) // 10KB
 	fileName := "hash_bench.dat"
-	_ = fm.WriteToFile(fileName, content)
+	_, _ = fm.WriteToFile(fileName, []byte(content))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
