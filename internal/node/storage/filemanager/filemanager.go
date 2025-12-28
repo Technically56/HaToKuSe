@@ -62,7 +62,7 @@ func (fm *FileManager) getFileLock(file_path string) *sync.RWMutex {
 	return fm.file_locks[h.Sum32()%uint32(len(fm.file_locks))]
 }
 
-func (fm *FileManager) WriteToFile(file_name string, file_content string) error {
+func (fm *FileManager) WriteToFile(file_name string, file_content []byte) (string, error) {
 	hash := fnv.New32a()
 	hash.Write([]byte(file_name))
 	folder_id := hash.Sum32() % fm.shard_count
@@ -75,7 +75,7 @@ func (fm *FileManager) WriteToFile(file_name string, file_content string) error 
 
 	if _, ok := fm.createdDirs.Load(sub_directory); !ok {
 		if err := os.MkdirAll(dir_path, 0755); err != nil {
-			return err
+			return "", err
 		}
 		fm.createdDirs.Store(sub_directory, true)
 	}
@@ -89,39 +89,41 @@ func (fm *FileManager) WriteToFile(file_name string, file_content string) error 
 
 	if err != nil {
 		fmt.Println("Error opening file:", err)
-		return err
+		return "", err
 	}
 
 	writer := bufPool.Get().(*bufio.Writer)
 	writer.Reset(file)
-
-	if _, err = writer.WriteString(file_content); err != nil {
+	defer bufPool.Put(writer)
+	if _, err = writer.Write(file_content); err != nil {
 		//Add Error Logging To The Leader Here
 		fmt.Println("Error writing to buffer:", err)
 		file.Close()
-		return err
+		return "", err
 	}
 
 	if err := writer.Flush(); err != nil {
 		//Add Error Logging To The Leader Here
 		file.Close()
-		return err
+		return "", err
 	}
 
 	if fm.direct_sync {
 		if err := file.Sync(); err != nil {
 			//Add Error Logging To The Leader Here
-			return err
+			return "", err
 		}
 	}
+	hasher := sha256.New()
+	hasher.Write(file_content)
 
 	if err := file.Close(); err != nil {
 		//Add Error Logging To The Leader Here
-		return err
+		return "", err
 	}
 	fm.increaseFileCounter()
-	bufPool.Put(writer)
-	return nil
+
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 func (fm *FileManager) ReadFromFile(file_name string) ([]byte, error) {
