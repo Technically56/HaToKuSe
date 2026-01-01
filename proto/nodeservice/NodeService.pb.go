@@ -4,7 +4,7 @@
 // 	protoc        v3.21.12
 // source: NodeService.proto
 
-package communication
+package nodecommunication
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -169,86 +169,6 @@ func (x *FileRequest) GetFileId() string {
 	return ""
 }
 
-type HeartBeatResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	IsAlive       bool                   `protobuf:"varint,1,opt,name=isAlive,proto3" json:"isAlive,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *HeartBeatResponse) Reset() {
-	*x = HeartBeatResponse{}
-	mi := &file_NodeService_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *HeartBeatResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*HeartBeatResponse) ProtoMessage() {}
-
-func (x *HeartBeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_NodeService_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use HeartBeatResponse.ProtoReflect.Descriptor instead.
-func (*HeartBeatResponse) Descriptor() ([]byte, []int) {
-	return file_NodeService_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *HeartBeatResponse) GetIsAlive() bool {
-	if x != nil {
-		return x.IsAlive
-	}
-	return false
-}
-
-type HeartBeatRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *HeartBeatRequest) Reset() {
-	*x = HeartBeatRequest{}
-	mi := &file_NodeService_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *HeartBeatRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*HeartBeatRequest) ProtoMessage() {}
-
-func (x *HeartBeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_NodeService_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use HeartBeatRequest.ProtoReflect.Descriptor instead.
-func (*HeartBeatRequest) Descriptor() ([]byte, []int) {
-	return file_NodeService_proto_rawDescGZIP(), []int{4}
-}
-
 type HasFileResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	HasFile       bool                   `protobuf:"varint,1,opt,name=hasFile,proto3" json:"hasFile,omitempty"`
@@ -258,7 +178,7 @@ type HasFileResponse struct {
 
 func (x *HasFileResponse) Reset() {
 	*x = HasFileResponse{}
-	mi := &file_NodeService_proto_msgTypes[5]
+	mi := &file_NodeService_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -270,7 +190,7 @@ func (x *HasFileResponse) String() string {
 func (*HasFileResponse) ProtoMessage() {}
 
 func (x *HasFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_NodeService_proto_msgTypes[5]
+	mi := &file_NodeService_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -283,7 +203,7 @@ func (x *HasFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HasFileResponse.ProtoReflect.Descriptor instead.
 func (*HasFileResponse) Descriptor() ([]byte, []int) {
-	return file_NodeService_proto_rawDescGZIP(), []int{5}
+	return file_NodeService_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *HasFileResponse) GetHasFile() bool {
@@ -301,7 +221,7 @@ type FileCountRequest struct {
 
 func (x *FileCountRequest) Reset() {
 	*x = FileCountRequest{}
-	mi := &file_NodeService_proto_msgTypes[6]
+	mi := &file_NodeService_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -313,7 +233,7 @@ func (x *FileCountRequest) String() string {
 func (*FileCountRequest) ProtoMessage() {}
 
 func (x *FileCountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_NodeService_proto_msgTypes[6]
+	mi := &file_NodeService_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -326,7 +246,7 @@ func (x *FileCountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileCountRequest.ProtoReflect.Descriptor instead.
 func (*FileCountRequest) Descriptor() ([]byte, []int) {
-	return file_NodeService_proto_rawDescGZIP(), []int{6}
+	return file_NodeService_proto_rawDescGZIP(), []int{4}
 }
 
 type FileCountResponse struct {
@@ -338,7 +258,7 @@ type FileCountResponse struct {
 
 func (x *FileCountResponse) Reset() {
 	*x = FileCountResponse{}
-	mi := &file_NodeService_proto_msgTypes[7]
+	mi := &file_NodeService_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -350,7 +270,7 @@ func (x *FileCountResponse) String() string {
 func (*FileCountResponse) ProtoMessage() {}
 
 func (x *FileCountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_NodeService_proto_msgTypes[7]
+	mi := &file_NodeService_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -363,7 +283,7 @@ func (x *FileCountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileCountResponse.ProtoReflect.Descriptor instead.
 func (*FileCountResponse) Descriptor() ([]byte, []int) {
-	return file_NodeService_proto_rawDescGZIP(), []int{7}
+	return file_NodeService_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *FileCountResponse) GetFileCount() int64 {
@@ -385,22 +305,18 @@ const file_NodeService_proto_rawDesc = "" +
 	"\afile_id\x18\x01 \x01(\tR\x06fileId\x12\x1b\n" +
 	"\tfile_hash\x18\x02 \x01(\tR\bfileHash\"&\n" +
 	"\vFileRequest\x12\x17\n" +
-	"\afile_id\x18\x01 \x01(\tR\x06fileId\"-\n" +
-	"\x11HeartBeatResponse\x12\x18\n" +
-	"\aisAlive\x18\x01 \x01(\bR\aisAlive\"\x12\n" +
-	"\x10HeartBeatRequest\"+\n" +
+	"\afile_id\x18\x01 \x01(\tR\x06fileId\"+\n" +
 	"\x0fHasFileResponse\x12\x18\n" +
 	"\ahasFile\x18\x01 \x01(\bR\ahasFile\"\x12\n" +
 	"\x10FileCountRequest\"2\n" +
 	"\x11FileCountResponse\x12\x1d\n" +
 	"\n" +
-	"file_count\x18\x01 \x01(\x03R\tfileCount2\xe2\x01\n" +
+	"file_count\x18\x01 \x01(\x03R\tfileCount2\xae\x01\n" +
 	"\vNodeService\x12\x1d\n" +
 	"\tStoreFile\x12\x05.File\x1a\t.FileHash\x12\x1e\n" +
-	"\aGetFile\x12\f.FileRequest\x1a\x05.File\x122\n" +
-	"\tHeartBeat\x12\x11.HeartBeatRequest\x1a\x12.HeartBeatResponse\x12)\n" +
+	"\aGetFile\x12\f.FileRequest\x1a\x05.File\x12)\n" +
 	"\aHasFile\x12\f.FileRequest\x1a\x10.HasFileResponse\x125\n" +
-	"\fGetFileCount\x12\x11.FileCountRequest\x1a\x12.FileCountResponseB7Z5github.com/Technically56/HaToKuSe/proto/communicationb\x06proto3"
+	"\fGetFileCount\x12\x11.FileCountRequest\x1a\x12.FileCountResponseBGZEgithub.com/Technically56/HaToKuSe/proto/nodeservice/nodecommunicationb\x06proto3"
 
 var (
 	file_NodeService_proto_rawDescOnce sync.Once
@@ -414,30 +330,26 @@ func file_NodeService_proto_rawDescGZIP() []byte {
 	return file_NodeService_proto_rawDescData
 }
 
-var file_NodeService_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_NodeService_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_NodeService_proto_goTypes = []any{
 	(*File)(nil),              // 0: File
 	(*FileHash)(nil),          // 1: FileHash
 	(*FileRequest)(nil),       // 2: FileRequest
-	(*HeartBeatResponse)(nil), // 3: HeartBeatResponse
-	(*HeartBeatRequest)(nil),  // 4: HeartBeatRequest
-	(*HasFileResponse)(nil),   // 5: HasFileResponse
-	(*FileCountRequest)(nil),  // 6: FileCountRequest
-	(*FileCountResponse)(nil), // 7: FileCountResponse
+	(*HasFileResponse)(nil),   // 3: HasFileResponse
+	(*FileCountRequest)(nil),  // 4: FileCountRequest
+	(*FileCountResponse)(nil), // 5: FileCountResponse
 }
 var file_NodeService_proto_depIdxs = []int32{
 	0, // 0: NodeService.StoreFile:input_type -> File
 	2, // 1: NodeService.GetFile:input_type -> FileRequest
-	4, // 2: NodeService.HeartBeat:input_type -> HeartBeatRequest
-	2, // 3: NodeService.HasFile:input_type -> FileRequest
-	6, // 4: NodeService.GetFileCount:input_type -> FileCountRequest
-	1, // 5: NodeService.StoreFile:output_type -> FileHash
-	0, // 6: NodeService.GetFile:output_type -> File
-	3, // 7: NodeService.HeartBeat:output_type -> HeartBeatResponse
-	5, // 8: NodeService.HasFile:output_type -> HasFileResponse
-	7, // 9: NodeService.GetFileCount:output_type -> FileCountResponse
-	5, // [5:10] is the sub-list for method output_type
-	0, // [0:5] is the sub-list for method input_type
+	2, // 2: NodeService.HasFile:input_type -> FileRequest
+	4, // 3: NodeService.GetFileCount:input_type -> FileCountRequest
+	1, // 4: NodeService.StoreFile:output_type -> FileHash
+	0, // 5: NodeService.GetFile:output_type -> File
+	3, // 6: NodeService.HasFile:output_type -> HasFileResponse
+	5, // 7: NodeService.GetFileCount:output_type -> FileCountResponse
+	4, // [4:8] is the sub-list for method output_type
+	0, // [0:4] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -454,7 +366,7 @@ func file_NodeService_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_NodeService_proto_rawDesc), len(file_NodeService_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

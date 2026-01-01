@@ -4,7 +4,7 @@
 // - protoc             v3.21.12
 // source: NodeService.proto
 
-package communication
+package nodecommunication
 
 import (
 	context "context"
@@ -21,7 +21,6 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	NodeService_StoreFile_FullMethodName    = "/NodeService/StoreFile"
 	NodeService_GetFile_FullMethodName      = "/NodeService/GetFile"
-	NodeService_HeartBeat_FullMethodName    = "/NodeService/HeartBeat"
 	NodeService_HasFile_FullMethodName      = "/NodeService/HasFile"
 	NodeService_GetFileCount_FullMethodName = "/NodeService/GetFileCount"
 )
@@ -32,7 +31,6 @@ const (
 type NodeServiceClient interface {
 	StoreFile(ctx context.Context, in *File, opts ...grpc.CallOption) (*FileHash, error)
 	GetFile(ctx context.Context, in *FileRequest, opts ...grpc.CallOption) (*File, error)
-	HeartBeat(ctx context.Context, in *HeartBeatRequest, opts ...grpc.CallOption) (*HeartBeatResponse, error)
 	HasFile(ctx context.Context, in *FileRequest, opts ...grpc.CallOption) (*HasFileResponse, error)
 	GetFileCount(ctx context.Context, in *FileCountRequest, opts ...grpc.CallOption) (*FileCountResponse, error)
 }
@@ -65,16 +63,6 @@ func (c *nodeServiceClient) GetFile(ctx context.Context, in *FileRequest, opts .
 	return out, nil
 }
 
-func (c *nodeServiceClient) HeartBeat(ctx context.Context, in *HeartBeatRequest, opts ...grpc.CallOption) (*HeartBeatResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(HeartBeatResponse)
-	err := c.cc.Invoke(ctx, NodeService_HeartBeat_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *nodeServiceClient) HasFile(ctx context.Context, in *FileRequest, opts ...grpc.CallOption) (*HasFileResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(HasFileResponse)
@@ -101,7 +89,6 @@ func (c *nodeServiceClient) GetFileCount(ctx context.Context, in *FileCountReque
 type NodeServiceServer interface {
 	StoreFile(context.Context, *File) (*FileHash, error)
 	GetFile(context.Context, *FileRequest) (*File, error)
-	HeartBeat(context.Context, *HeartBeatRequest) (*HeartBeatResponse, error)
 	HasFile(context.Context, *FileRequest) (*HasFileResponse, error)
 	GetFileCount(context.Context, *FileCountRequest) (*FileCountResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
@@ -119,9 +106,6 @@ func (UnimplementedNodeServiceServer) StoreFile(context.Context, *File) (*FileHa
 }
 func (UnimplementedNodeServiceServer) GetFile(context.Context, *FileRequest) (*File, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetFile not implemented")
-}
-func (UnimplementedNodeServiceServer) HeartBeat(context.Context, *HeartBeatRequest) (*HeartBeatResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method HeartBeat not implemented")
 }
 func (UnimplementedNodeServiceServer) HasFile(context.Context, *FileRequest) (*HasFileResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method HasFile not implemented")
@@ -186,24 +170,6 @@ func _NodeService_GetFile_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NodeService_HeartBeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(HeartBeatRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeServiceServer).HeartBeat(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeService_HeartBeat_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeServiceServer).HeartBeat(ctx, req.(*HeartBeatRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _NodeService_HasFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(FileRequest)
 	if err := dec(in); err != nil {
@@ -254,10 +220,6 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetFile",
 			Handler:    _NodeService_GetFile_Handler,
-		},
-		{
-			MethodName: "HeartBeat",
-			Handler:    _NodeService_HeartBeat_Handler,
 		},
 		{
 			MethodName: "HasFile",

@@ -1,10 +1,9 @@
 syntax = "proto3";
 
-option go_package ="github.com/Technically56/HaToKuSe/proto/communication";
+option go_package ="github.com/Technically56/HaToKuSe/proto/nodeservice/nodecommunication";
 service NodeService{
     rpc StoreFile(File) returns (FileHash);
     rpc GetFile(FileRequest) returns (File);
-    rpc HeartBeat(HeartBeatRequest) returns (HeartBeatResponse);
     rpc HasFile(FileRequest) returns (HasFileResponse);
     rpc GetFileCount(FileCountRequest) returns (FileCountResponse);   
 }
@@ -21,10 +20,6 @@ message FileHash{
 message FileRequest{
     string file_id = 1;
 }
-message HeartBeatResponse{
-    bool isAlive = 1;
-}
-message HeartBeatRequest{}
 
 message HasFileResponse{
     bool hasFile = 1;
