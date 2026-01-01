@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+option go_package= "github.com/Technically56/HaToKuSe/proto/leaderservice/leadercommunication";
+service LeaderService{
+    rpc JoinFamily(FamilyJoinRequest) returns (FamilyJoinResponse);
+    rpc GetFamilyList(FamilyListRequest) returns (FamilyListResponse);
+    rpc SendHeartbeat(HeartBeatRequest) returns (HeartBeatResponse);
+}
+
+
+message FamilyJoinRequest{
+    string ip = 1;
+    string node_id = 2;
+    string port = 3;
+}
+
+message FamilyJoinResponse {
+    bool success = 1;
+}
+
+message FamilyListRequest{}
+
+message FamilyListResponse{
+    repeated FamilyMember members = 1;
+}
+message FamilyMember{
+    string member_id = 1;
+    string ip = 2;
+    string port = 3;
+}
+message HeartBeatRequest{
+    string member_id = 1;
+}
+message HeartBeatResponse{
+    bool ack = 1;
+}
+
+
