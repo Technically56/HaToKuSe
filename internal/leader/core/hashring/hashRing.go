@@ -25,7 +25,7 @@ type HashRing struct {
 }
 
 func NewHashRing() *HashRing {
-	hr := &HashRing{}
+	hr := &HashRing{addr_list: &sync.Map{}, conn_list: &sync.Map{}}
 	empty := make([]string, 0)
 	hr.ring.Store(&empty)
 	return hr
@@ -160,4 +160,16 @@ func (hr *HashRing) RemoveNode(nodeID string) error {
 	}
 
 	return nil
+}
+func (hr *HashRing) GetCurrentMembers() ([]string, []string) {
+	ring_instance := hr.ring.Load().([]string)
+	members_ip := make([]string, 0, len(ring_instance))
+	members_id := make([]string, 0, len(ring_instance))
+	for _, nodeHash := range ring_instance {
+		if addr, ok := hr.addr_list.Load(nodeHash); ok {
+			members_ip = append(members_ip, addr.(string))
+			members_id = append(members_id, nodeHash)
+		}
+	}
+	return members_id, members_ip
 }
