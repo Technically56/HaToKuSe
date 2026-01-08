@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,15 +20,22 @@ import (
 type HashRing struct {
 	addr_list *sync.Map
 	conn_list *sync.Map
+	id_map    *sync.Map
 	ring      atomic.Value
 	mu        sync.Mutex
 	sfg       singleflight.Group
+	vnodes    int
 }
 
-func NewHashRing() *HashRing {
-	hr := &HashRing{}
+func NewHashRing(vnodeCount int) *HashRing {
+	hr := &HashRing{
+		addr_list: &sync.Map{},
+		conn_list: &sync.Map{},
+		id_map:    &sync.Map{},
+		vnodes:    vnodeCount,
+	}
 	empty := make([]string, 0)
-	hr.ring.Store(&empty)
+	hr.ring.Store(empty)
 	return hr
 }
 
@@ -60,15 +68,28 @@ func (hr *HashRing) AddNode(node_id string, node_addr string) error {
 	}
 	hr.mu.Lock()
 	defer hr.mu.Unlock()
+
 	oldRing := hr.ring.Load().([]string)
-	newHash := sha256.Sum256([]byte(node_id))
-	newNodeHash := hex.EncodeToString(newHash[:])
+	newRing := slices.Clone(oldRing)
 
-	newRing := append(slices.Clone(oldRing), string(newNodeHash))
+	vnodeHashes := make([]string, 0, hr.vnodes)
+
+	for i := 0; i < hr.vnodes; i++ {
+
+		vnodeKey := node_id + "-" + strconv.Itoa(i)
+		hash := sha256.Sum256([]byte(vnodeKey))
+		vnodeHash := hex.EncodeToString(hash[:])
+
+		newRing = append(newRing, vnodeHash)
+		vnodeHashes = append(vnodeHashes, vnodeHash)
+
+		hr.addr_list.Store(vnodeHash, node_addr)
+	}
+
 	slices.Sort(newRing)
-	hr.ring.CompareAndSwap(oldRing, newRing)
+	hr.ring.Store(newRing)
+	hr.id_map.Store(node_id, vnodeHashes)
 
-	hr.addr_list.Store(newNodeHash, node_addr)
 	return nil
 }
 
@@ -115,49 +136,67 @@ func (hr *HashRing) Walk(current_index int) (next_index int) {
 	if current_index <= -1 {
 		return -1
 	}
-	ring_instance := hr.ring.Load().([]string)
 
+	ring_instance := hr.ring.Load().([]string)
+	if len(ring_instance) == 0 {
+		return -1
+	}
 	return (current_index + 1) % len(ring_instance)
 }
 
 func (hr *HashRing) RemoveNode(nodeID string) error {
-	if _, err := uuid.Parse(nodeID); err != nil {
-		return errors.New("invalid node_id, must be a UUID string")
+	val, ok := hr.id_map.Load(nodeID)
+	if !ok {
+		return errors.New("node not found")
 	}
-
-	hash := sha256.Sum256([]byte(nodeID))
-	nodeHash := hex.EncodeToString(hash[:])
+	vnodeHashes := val.([]string)
 
 	hr.mu.Lock()
 	defer hr.mu.Unlock()
 
 	oldRing := hr.ring.Load().([]string)
 
-	idx := -1
-	for i, v := range oldRing {
-		if v == nodeHash {
-			idx = i
-			break
+	toRemove := make(map[string]struct{})
+	for _, h := range vnodeHashes {
+		toRemove[h] = struct{}{}
+		hr.addr_list.Delete(h)
+	}
+	newRing := make([]string, 0, len(oldRing)-hr.vnodes)
+	for _, h := range oldRing {
+		if _, found := toRemove[h]; !found {
+			newRing = append(newRing, h)
 		}
 	}
-
-	if idx == -1 {
-		return errors.New("node not found in ring")
-	}
-
-	newRing := slices.Delete(slices.Clone(oldRing), idx, idx+1)
 
 	hr.ring.Store(newRing)
-
-	if addr, ok := hr.addr_list.LoadAndDelete(nodeHash); ok {
-		addrStr := addr.(string)
-
-		if val, ok := hr.conn_list.LoadAndDelete(addrStr); ok {
-			if conn, ok := val.(*grpc.ClientConn); ok {
-				_ = conn.Close()
-			}
-		}
-	}
+	hr.id_map.Delete(nodeID)
 
 	return nil
+}
+func (hr *HashRing) GetCurrentMembers() ([]string, []string) {
+	physicalIDs := make([]string, 0)
+	physicalIPs := make([]string, 0)
+
+	hr.id_map.Range(func(key, value interface{}) bool {
+		nodeID := key.(string)
+		vnodeHashes := value.([]string)
+
+		if len(vnodeHashes) > 0 {
+			if addr, ok := hr.addr_list.Load(vnodeHashes[0]); ok {
+				physicalIDs = append(physicalIDs, nodeID)
+				physicalIPs = append(physicalIPs, addr.(string))
+			}
+		}
+		return true
+	})
+
+	return physicalIDs, physicalIPs
+}
+func (hr *HashRing) GetNodeCount() int {
+	count := 0
+	hr.id_map.Range(func(key, value interface{}) bool {
+		count++
+		return true
+	})
+	return count
 }

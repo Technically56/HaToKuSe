@@ -17,10 +17,18 @@ import (
 var bufPool = sync.Pool{
 	New: func() interface{} {
 		// Create a buffer that writes to "io.Discard" initially
-		return bufio.NewWriterSize(io.Discard, 4096)
+		return bufio.NewWriterSize(io.Discard, 256*1024)
 	},
 }
 
+type FileManagerInterface interface {
+	WriteToFile(file_name string, file_content []byte) (string, error)
+	ReadFromFile(file_name string) ([]byte, error)
+	HasFile(file_name string) bool
+	GetFileHash(file_name string) (string, error)
+	GetFileCounter() int64
+	GetFolderCounter() int64
+}
 type FileManager struct {
 	folder_path  string
 	file_locks   []*sync.RWMutex
