@@ -13,7 +13,7 @@ import (
 	nodegrpcserver "github.com/Technically56/HaToKuSe/internal/node/network/grpcServer"
 	fm "github.com/Technically56/HaToKuSe/internal/node/storage/filemanager"
 	pb_leader "github.com/Technically56/HaToKuSe/proto/leaderservice"
-	pb_node "github.com/Technically56/HaToKuSe/proto/nodeservice" // Replace with your actual node proto path
+	pb_node "github.com/Technically56/HaToKuSe/proto/nodeservice"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -26,11 +26,9 @@ type NodeServer struct {
 	config        *config.Config
 	grpc_engine   *grpc.Server
 
-	// Thread-safe membership state
 	family_members []string
 	mu             sync.RWMutex
 
-	// Lifecycle management
 	stopCtx    context.Context
 	cancelStop context.CancelFunc
 }
@@ -41,14 +39,13 @@ func NewNodeServer(cfg_path string, file_manager *fm.FileManager) (*NodeServer, 
 		return nil, fmt.Errorf("failed to load config: %v", err)
 	}
 
-	// Create a cancelable context to control background routines
 	ctx, cancel := context.WithCancel(context.Background())
 
 	ns := &NodeServer{
 		config:     cfg,
 		stopCtx:    ctx,
 		cancelStop: cancel,
-		// Initialize the gRPC handler with the file manager
+
 		grpc_handler: nodegrpcserver.NewNodeGrpcServer(file_manager),
 	}
 
@@ -56,17 +53,14 @@ func NewNodeServer(cfg_path string, file_manager *fm.FileManager) (*NodeServer, 
 	return ns, nil
 }
 
-// Start kicks off the gRPC server and background sync routines
 func (ns *NodeServer) Start(leader_addr string) error {
 	port := ns.getConfigValue("node", "port")
 
-	// 1. Listen on all interfaces (0.0.0.0) for Docker compatibility
 	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", port))
 	if err != nil {
 		return fmt.Errorf("failed to listen on port %s: %v", port, err)
 	}
 
-	// 2. Setup and Register Local gRPC Server
 	ns.grpc_engine = grpc.NewServer()
 	pb_node.RegisterNodeServiceServer(ns.grpc_engine, ns.grpc_handler)
 
@@ -77,12 +71,10 @@ func (ns *NodeServer) Start(leader_addr string) error {
 		}
 	}()
 
-	// 3. Connect to Leader & Initialize Client Stub
 	if err := ns.connectToHost(leader_addr); err != nil {
 		return err
 	}
 
-	// 4. Identify self and Join Family
 	myIP := ns.getConfigValue("node", "ip")
 	if myIP == "" {
 		detected, err := ns.getDockerIP()
@@ -106,7 +98,6 @@ func (ns *NodeServer) Start(leader_addr string) error {
 		return fmt.Errorf("failed to join family: %v", err)
 	}
 
-	// 5. Start Background Tickers
 	go ns.startHeartBeatRoutine(5)
 	go ns.startDiscoveryRoutine(10)
 
@@ -114,11 +105,9 @@ func (ns *NodeServer) Start(leader_addr string) error {
 	return nil
 }
 
-// Stop gracefully shuts down all connections and routines
 func (ns *NodeServer) Stop() error {
 	log.Println("Initiating graceful shutdown...")
 
-	// Signal background routines to exit
 	ns.cancelStop()
 
 	if ns.leader_conn != nil {
@@ -131,7 +120,6 @@ func (ns *NodeServer) Stop() error {
 	return nil
 }
 
-// Background Routines
 func (ns *NodeServer) startHeartBeatRoutine(interval_sec int) {
 	ticker := time.NewTicker(time.Duration(interval_sec) * time.Second)
 	defer ticker.Stop()
