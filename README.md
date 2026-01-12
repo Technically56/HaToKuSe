@@ -70,7 +70,7 @@ docker compose exec client-test nc leader 6000
 ```
 
 ### Commands
-Once connected, you can use the following commands:
+Once connected, you can use the following commands (assuming myfile is a uuid):
 
 *   **`SET <key> <value>`**
     *   Stores a value in the cluster.
