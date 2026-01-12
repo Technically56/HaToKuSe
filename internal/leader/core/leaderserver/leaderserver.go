@@ -283,9 +283,6 @@ func (ls *LeaderServer) retrieveFile(file_id string, client_meta *ClientMetadata
 		}
 	}
 
-	if ls.simple_mode {
-		fmt.Fprintf(client_meta.Conn, "ERROR\n")
-	}
 	return nil, fmt.Errorf("File %s not found in the network", file_id)
 }
 func (ls *LeaderServer) startHeatBeatCleaner(ctx context.Context) error {
@@ -338,7 +335,7 @@ func (ls *LeaderServer) simpleHandleClientConnection(conn net.Conn) {
 		ls.mu.Unlock()
 		fmt.Printf("Client %s disconnected.\n", client_id)
 	}()
-
+	fmt.Printf("New client connected: %s\n", client_id)
 	ls.reportToClient(client_meta, "ALERT", "Welcome to HaToKuSe Leader Server (DETAILED MODE)\n")
 
 	scanner := bufio.NewScanner(conn)
@@ -359,6 +356,9 @@ func (ls *LeaderServer) simpleHandleClientConnection(conn net.Conn) {
 		case "SET":
 			if len(parts) < 3 {
 				ls.reportToClient(client_meta, "ERROR", "Usage: SET <key> <data>\n")
+				if ls.simple_mode {
+					fmt.Fprintf(client_meta.Conn, "ERROR\n")
+				}
 				continue
 			}
 			key := parts[1]
@@ -366,6 +366,9 @@ func (ls *LeaderServer) simpleHandleClientConnection(conn net.Conn) {
 			err := ls.storeFile(key, data, client_meta)
 			if err != nil {
 				ls.reportToClient(client_meta, "ERROR", err.Error())
+				if ls.simple_mode {
+					fmt.Fprintf(client_meta.Conn, "ERROR\n")
+				}
 				continue
 			}
 
@@ -381,6 +384,9 @@ func (ls *LeaderServer) simpleHandleClientConnection(conn net.Conn) {
 				if ls.simple_mode {
 					fmt.Fprintf(client_meta.Conn, "ERROR\n")
 				}
+				continue
+			}
+			if content == nil {
 				continue
 			}
 			if ls.simple_mode {

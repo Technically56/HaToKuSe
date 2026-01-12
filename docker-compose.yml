@@ -4,7 +4,7 @@ services:
     leader:
         build: .
         container_name: leader
-        command: [ "-mode=leader", "-simple=false" ]
+        command: [ "-mode=leader", "-simple=true" ]
         ports:
             - "6000:6000"
         networks:
