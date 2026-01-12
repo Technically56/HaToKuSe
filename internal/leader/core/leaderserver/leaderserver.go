@@ -422,7 +422,7 @@ func (ls *LeaderServer) broadCastToAllClients(message string) {
 			go func(c *ClientMetadata) {
 				c.Mu.Lock()
 				defer c.Mu.Unlock()
-				fmt.Fprintf(c.Conn, "[BROADCAST]: %s\n> ", message)
+				fmt.Fprintf(c.Conn, "[BROADCAST]: %s\n", message)
 			}(client)
 		}
 	}
