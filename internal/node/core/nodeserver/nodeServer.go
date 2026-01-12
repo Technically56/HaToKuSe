@@ -33,12 +33,7 @@ type NodeServer struct {
 	cancelStop context.CancelFunc
 }
 
-func NewNodeServer(cfg_path string, file_manager *fm.FileManager) (*NodeServer, error) {
-	cfg, err := config.LoadConfig(cfg_path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %v", err)
-	}
-
+func NewNodeServer(cfg *config.Config, file_manager *fm.FileManager, node_id string) (*NodeServer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	ns := &NodeServer{
@@ -49,12 +44,12 @@ func NewNodeServer(cfg_path string, file_manager *fm.FileManager) (*NodeServer, 
 		grpc_handler: nodegrpcserver.NewNodeGrpcServer(file_manager),
 	}
 
-	ns.node_id = ns.getConfigValue("node", "id")
+	ns.node_id = node_id
 	return ns, nil
 }
 
-func (ns *NodeServer) Start(leader_addr string) error {
-	port := ns.getConfigValue("node", "port")
+func (ns *NodeServer) Start(leader_addr string, node_port string) error {
+	port := node_port
 
 	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", port))
 	if err != nil {

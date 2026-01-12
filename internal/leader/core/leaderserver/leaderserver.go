@@ -126,7 +126,7 @@ func (ls *LeaderServer) Stop() error {
 
 func (ls *LeaderServer) startClientServer() error {
 	port := ls.config.Values["leader"]["client_port"].(string)
-	lis, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%s", port))
+	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", port))
 	ls.client_listener = lis
 	if err != nil {
 		return fmt.Errorf("Failed to listen on port %s: %v", port, err)
@@ -185,7 +185,7 @@ func (ls *LeaderServer) storeFile(file_id string, data []byte, meta *ClientMetad
 				ls.reportToClient(meta, "ALERT", fmt.Sprintf("Storing file %s on node %s...\n", file_id, node_addr))
 
 				client := nodecommunication.NewNodeServiceClient(conn)
-				storectx, cancel := context.WithTimeout(context.Background(), time.Duration(ls.call_timeout)*time.Second)
+				storectx, cancel := context.WithTimeout(context.Background(), ls.call_timeout)
 
 				hash, err := client.StoreFile(storectx, &nodecommunication.File{
 					FileId:      file_id,
@@ -216,7 +216,17 @@ func (ls *LeaderServer) storeFile(file_id string, data []byte, meta *ClientMetad
 
 	if replication_count < ls.tolerance {
 		ls.reportToClient(meta, "ERROR", fmt.Sprintf("Failed to achieve desired replication for file %s. Only %d replicas created.\n", file_id, replication_count))
+		if ls.simple_mode {
+			meta.Mu.Lock()
+			fmt.Fprintf(meta.Conn, "ERROR\n")
+			meta.Mu.Unlock()
+		}
 	} else {
+		if ls.simple_mode {
+			meta.Mu.Lock()
+			fmt.Fprintf(meta.Conn, "OK\n")
+			meta.Mu.Unlock()
+		}
 		ls.reportToClient(meta, "SUCCESS", fmt.Sprintf("File %s stored successfully with %d replicas.\n", file_id, replication_count))
 	}
 
@@ -227,64 +237,59 @@ func (ls *LeaderServer) retrieveFile(file_id string, client_meta *ClientMetadata
 		return nil, fmt.Errorf("invalid file_id: %s", file_id)
 	}
 	hr := ls.grpc_handler.Hr
-	index, err := hr.FindContainingNodeIndex(file_id)
-
+	startIndex, err := hr.FindContainingNodeIndex(file_id)
 	if err != nil {
 		return nil, err
 	}
-	original_index := index
-	full_circle := false
-	for !full_circle {
-		node_addr, err := hr.GetAddrFromIndex(index)
+
+	visited := make(map[string]bool)
+	currentIndex := startIndex
+
+	for {
+		node_addr, err := hr.GetAddrFromIndex(currentIndex)
 		if err != nil {
 			return nil, err
 		}
 
-		conn, err := hr.GetOrCreateConnection(node_addr)
-		if err != nil {
-			return nil, err
-		}
+		if !visited[node_addr] {
+			visited[node_addr] = true
 
-		client := nodecommunication.NewNodeServiceClient(conn)
-		retrievectx, cancel := context.WithTimeout(context.Background(), time.Duration(ls.call_timeout)*time.Second)
-		resp, err := client.HasFile(retrievectx, &nodecommunication.FileRequest{
-			FileId: file_id,
-		})
-		cancel()
+			conn, err := hr.GetOrCreateConnection(node_addr)
+			if err == nil {
+				client := nodecommunication.NewNodeServiceClient(conn)
 
-		if err == nil {
-			if resp.HasFile {
-				ls.reportToClient(client_meta, "ALERT", fmt.Sprintf("Retrieving file %s from node %s...\n", file_id, node_addr))
+				ctx, cancel := context.WithTimeout(context.Background(), ls.call_timeout)
 
-				retrievectx, cancel := context.WithTimeout(context.Background(), time.Duration(ls.call_timeout)*time.Second)
-				fileResp, err := client.GetFile(retrievectx, &nodecommunication.FileRequest{
-					FileId: file_id,
-				})
+				resp, err := client.GetFile(ctx, &nodecommunication.FileRequest{FileId: file_id})
 				cancel()
 
-				if err != nil {
-					ls.reportToClient(client_meta, "ERROR", fmt.Sprintf("Failed to retrieve file %s from node %s: %v\n", file_id, node_addr, err))
-				} else {
-					ls.reportToClient(client_meta, "SUCCESS", fmt.Sprintf("File %s retrieved successfully from %s\n", file_id, node_addr))
-					return fileResp.FileContent, nil
+				if err == nil && resp != nil {
+					ls.reportToClient(client_meta, "SUCCESS", fmt.Sprintf("File %s found on %s\n", file_id, node_addr))
+					if ls.simple_mode {
+
+						fmt.Fprintf(client_meta.Conn, "OK ")
+					}
+					return resp.FileContent, nil
 				}
-			} else {
-				ls.reportToClient(client_meta, "WARNING", fmt.Sprintf("File %s not found on node %s\n", file_id, node_addr))
+
+				ls.reportToClient(client_meta, "WARNING", fmt.Sprintf("File not found on node %s\n", node_addr))
 			}
-		} else {
-			ls.reportToClient(client_meta, "ERROR", fmt.Sprintf("Error checking file %s on node %s: %v\n", file_id, node_addr, err))
 		}
 
-		index = hr.Walk(index)
-		if index == original_index {
-			full_circle = true
+		currentIndex = hr.Walk(currentIndex)
+
+		if currentIndex == startIndex {
+			break
 		}
 	}
 
+	if ls.simple_mode {
+		fmt.Fprintf(client_meta.Conn, "ERROR\n")
+	}
 	return nil, fmt.Errorf("File %s not found in the network", file_id)
 }
 func (ls *LeaderServer) startHeatBeatCleaner(ctx context.Context) error {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -296,11 +301,12 @@ func (ls *LeaderServer) startHeatBeatCleaner(ctx context.Context) error {
 			fmt.Println("Performing heartbeat cleanup...")
 			ls.grpc_handler.IsAlive.Range(func(key, value any) bool {
 				lastSeen := value.(time.Time)
-				if time.Since(lastSeen) > time.Duration(ls.server_timeout)*time.Second {
-					ls.broadCastToAllClients("Client " + key.(string) + " is considered offline due to missed heartbeats.")
+				if time.Since(lastSeen) > ls.server_timeout {
+					fmt.Printf("Detected dead node: %s. Removing...\n", key.(string))
+					ls.broadCastToAllClients(fmt.Sprintf("ALERT: Node %s disconnected (heartbeat timeout).", key.(string)))
 					ls.grpc_handler.IsAlive.Delete(key)
 					ls.grpc_handler.Hr.RemoveNode(key.(string))
-					fmt.Printf("Removed node %s from hash ring due to missed heartbeats.\n", key.(string))
+					fmt.Printf("Successfully removed node %s from hash ring.\n", key.(string))
 				}
 				return true
 			})
@@ -308,6 +314,11 @@ func (ls *LeaderServer) startHeatBeatCleaner(ctx context.Context) error {
 	}
 }
 func (ls *LeaderServer) simpleHandleClientConnection(conn net.Conn) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("Recovered from panic in client handler: %v\n", r)
+		}
+	}()
 	defer conn.Close()
 	client_id := uuid.New().String()
 	client_meta := &ClientMetadata{
@@ -328,7 +339,7 @@ func (ls *LeaderServer) simpleHandleClientConnection(conn net.Conn) {
 		fmt.Printf("Client %s disconnected.\n", client_id)
 	}()
 
-	ls.reportToClient(client_meta, "ALERT", "Welcome to HaToKuSe Leader Server (Verbose Mode)\n")
+	ls.reportToClient(client_meta, "ALERT", "Welcome to HaToKuSe Leader Server (DETAILED MODE)\n")
 
 	scanner := bufio.NewScanner(conn)
 	const maxCapacity = 2 * 1024 * 1024
@@ -336,57 +347,73 @@ func (ls *LeaderServer) simpleHandleClientConnection(conn net.Conn) {
 	scanner.Buffer(buf, maxCapacity)
 
 	for scanner.Scan() {
-		line := scanner.Text()
-
-		parts := strings.SplitN(line, " ", 3)
-		if len(parts) < 2 {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
 			continue
 		}
 
+		parts := strings.SplitN(line, " ", 3)
 		command := strings.ToUpper(parts[0])
-		key := parts[1]
 
 		switch command {
 		case "SET":
 			if len(parts) < 3 {
-				ls.reportToClient(client_meta, "ERROR", "Missing data\n")
+				ls.reportToClient(client_meta, "ERROR", "Usage: SET <key> <data>\n")
 				continue
 			}
+			key := parts[1]
 			data := []byte(parts[2])
-
 			err := ls.storeFile(key, data, client_meta)
 			if err != nil {
-				ls.reportToClient(client_meta, "ERROR", fmt.Sprintf("%v\n", err))
-			} else {
-				ls.reportToClient(client_meta, "SUCCESS", "File stored\n")
+				ls.reportToClient(client_meta, "ERROR", err.Error())
+				continue
 			}
 
 		case "GET":
+			if len(parts) < 2 {
+				ls.reportToClient(client_meta, "ERROR", "Usage: GET <key>\n")
+				continue
+			}
+			key := parts[1]
 			content, err := ls.retrieveFile(key, client_meta)
 			if err != nil {
-				ls.reportToClient(client_meta, "ERROR", fmt.Sprintf("%v\n", err))
-			} else {
+				ls.reportToClient(client_meta, "ERROR", err.Error())
 				if ls.simple_mode {
-
-					fmt.Fprintf(conn, "OK %s\n", string(content))
-				} else {
-					fmt.Fprintf(conn, "[DATA:%d]: %s\n", len(content), string(content))
+					fmt.Fprintf(client_meta.Conn, "ERROR\n")
 				}
+				continue
+			}
+			if ls.simple_mode {
+				fmt.Fprintf(client_meta.Conn, "%s\n", content)
+			}
+			if !ls.simple_mode {
+				fmt.Fprintf(client_meta.Conn, "[DATA: %d]: %s\n", len(content), content)
 			}
 
+		case "FILES":
+			files := ls.getFileCounts()
+			for ip, count := range files {
+				fmt.Fprintf(conn, "%s: %d\n", ip, count)
+			}
+			fmt.Fprintf(conn, "OK\n")
+
+		case "NODES":
+			ids, ips := ls.grpc_handler.Hr.GetCurrentMembers()
+			for i := 0; i < len(ids); i++ {
+				fmt.Fprintf(conn, "Node: %s -> %s\n", ids[i], ips[i])
+			}
+			fmt.Fprintf(conn, "OK\n")
+
 		case "QUIT":
+			conn.Close()
 			return
 
 		default:
 			ls.reportToClient(client_meta, "ERROR", "Unknown command\n")
 		}
 
-		if !ls.simple_mode {
-			fmt.Fprintf(conn, "> ")
-		}
 	}
 }
-
 func (ls *LeaderServer) broadCastToAllClients(message string) {
 	if !ls.simple_mode {
 		ls.mu.RLock()
@@ -405,11 +432,14 @@ func (ls *LeaderServer) getNodeCount() int {
 }
 func (ls *LeaderServer) reportToClient(meta *ClientMetadata, code string, report_msg string) {
 	if !ls.simple_mode {
+
 		code_map := make(map[string]string)
 		code_map["SUCCESS"] = "[SUCCESS]: "
 		code_map["ALERT"] = "[ALERT]: "
 		code_map["WARNING"] = "[WARNING]: "
 		code_map["ERROR"] = "[ERROR]: "
+		meta.Mu.Lock()
+		defer meta.Mu.Unlock()
 		fmt.Fprint(meta.Conn, code_map[code], report_msg)
 	}
 }
@@ -456,4 +486,24 @@ func (ls *LeaderServer) parseFramedData(framedData []byte) ([]byte, error) {
 	}
 
 	return decodedData, nil
+}
+func (ls *LeaderServer) getFileCounts() map[string]int {
+	_, physicalIPs := ls.grpc_handler.Hr.GetCurrentMembers()
+	fileCounts := make(map[string]int)
+
+	for _, ip := range physicalIPs {
+		conn, err := ls.grpc_handler.Hr.GetOrCreateConnection(ip)
+		if err != nil {
+			continue
+		}
+		client := nodecommunication.NewNodeServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), ls.call_timeout)
+		resp, err := client.GetFileCount(ctx, &nodecommunication.FileCountRequest{})
+		cancel()
+		if err != nil {
+			continue
+		}
+		fileCounts[ip] = int(resp.FileCount)
+	}
+	return fileCounts
 }

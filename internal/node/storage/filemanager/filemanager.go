@@ -16,7 +16,7 @@ import (
 // Writer struct to be defined to the default messages directory of the running server.
 var bufPool = sync.Pool{
 	New: func() interface{} {
-		// Create a buffer that writes to "io.Discard" initially
+
 		return bufio.NewWriterSize(io.Discard, 256*1024)
 	},
 }

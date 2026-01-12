@@ -44,7 +44,7 @@ func (s *LeaderGrpcServer) GetFamilyList(ctx context.Context, in *pb.FamilyListR
 }
 func (s *LeaderGrpcServer) SendHeartbeat(ctx context.Context, in *pb.HeartBeatRequest) (*pb.HeartBeatResponse, error) {
 	node_id := in.GetMemberId()
-	currentTime := time.Now().Unix()
+	currentTime := time.Now()
 	s.IsAlive.Store(node_id, currentTime)
 	return &pb.HeartBeatResponse{}, nil
 }
