@@ -61,7 +61,7 @@ func (hr *HashRing) FindContainingNodeIndex(file_id string) (int, error) {
 
 func (hr *HashRing) AddNode(node_id string, node_addr string) error {
 	if _, err := uuid.Parse(node_id); err != nil {
-		return errors.New("Invalid file_id, must be a UUID string")
+		return errors.New("Invalid node_id, must be a UUID string")
 	}
 	if _, err := netip.ParseAddrPort(node_addr); err != nil {
 		return errors.New("Invalid node_addr, must be an ip + port adress string like '<ip>:<port>' ")
@@ -180,7 +180,6 @@ func (hr *HashRing) GetCurrentMembers() ([]string, []string) {
 	hr.id_map.Range(func(key, value interface{}) bool {
 		nodeID := key.(string)
 		vnodeHashes := value.([]string)
-
 		if len(vnodeHashes) > 0 {
 			if addr, ok := hr.addr_list.Load(vnodeHashes[0]); ok {
 				physicalIDs = append(physicalIDs, nodeID)

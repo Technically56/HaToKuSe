@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+    leader:
+        build: .
+        container_name: leader
+        command: [ "-mode=leader", "-simple=false" ]
+        ports:
+            - "6000:6000"
+        networks:
+            - hatokuse_net
+
+    node:
+        build: .
+        command: [ "-mode=node", "-port=50052" ]
+        deploy:
+            replicas: 3
+        depends_on:
+            - leader
+        environment:
+            - PUID=1000
+            - PGID=1000
+        networks:
+            - hatokuse_net
+
+networks:
+    hatokuse_net:
+        driver: bridge
