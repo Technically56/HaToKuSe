@@ -105,7 +105,6 @@ func (hr *HashRing) GetOrCreateConnection(addr string) (*grpc.ClientConn, error)
 		if val, ok := hr.conn_list.Load(addr); ok {
 			return val, nil
 		}
-
 		conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			return nil, err

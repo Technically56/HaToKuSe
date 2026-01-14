@@ -160,6 +160,98 @@ func TestLatency(t *testing.T) {
 	t.Logf("GET Latency: %v", getDuration)
 }
 
+func TestSimpleModeLatency(t *testing.T) {
+	// 1. Connect to the server
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:6000", 5*time.Second)
+	if err != nil {
+		t.Fatalf("Failed to connect to Leader Server: %v", err)
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(60 * time.Second))
+	reader := bufio.NewReader(conn)
+
+	// In Simple Mode, there is NO welcome message.
+	// We proceed directly to operations.
+
+	id := uuid.New().String()
+	// Reuse generateRandomPayload from latency_test.go (same package)
+	// If packetSize is not init, it defaults to 1024.
+	// Since both are in package main and TestMain parses flags, this uses the flag value.
+	payload := generateRandomPayload(*packetSize)
+	t.Logf("Generated payload of size: %d bytes", len(payload))
+
+	// --- 2. SET Operation ---
+	t.Logf("Testing SET (Simple Mode) with ID: %s", id)
+	start := time.Now()
+
+	_, err = fmt.Fprintf(conn, "SET %s %s\n", id, payload)
+	if err != nil {
+		t.Fatalf("Failed to send SET command: %v", err)
+	}
+
+	// Expect: "OK\n" or "ERROR\n"
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("Failed to read SET response: %v", err)
+	}
+	setDuration := time.Since(start)
+
+	response = strings.TrimSpace(response)
+	if response != "OK" {
+		t.Fatalf("SET operation failed. Expected 'OK', got '%s'", response)
+	}
+	t.Logf("SET Latency: %v", setDuration)
+
+	// --- 3. GET Operation ---
+	t.Logf("Testing GET (Simple Mode) with ID: %s", id)
+	start = time.Now()
+
+	_, err = fmt.Fprintf(conn, "GET %s\n", id)
+	if err != nil {
+		t.Fatalf("Failed to send GET command: %v", err)
+	}
+
+	// Expect: "OK <content>\n"
+	// Note: The code sends "OK " then "content\n".
+	// So we might technically get it in one ReadString notification if small enough,
+	// or we might get "OK " then the rest.
+	// ReadString('\n') should capture until the end of the line (content end).
+
+	getResponse, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("Failed to read GET response: %v", err)
+	}
+	getDuration := time.Since(start)
+
+	// Check prefix
+	if !strings.HasPrefix(getResponse, "OK ") {
+		t.Fatalf("GET operation failed or invalid format. Received: %s", getResponse)
+	}
+
+	// Extract Content
+	// "OK <content>\n" -> remove "OK " and trim suffix "\n"
+	receivedContent := strings.TrimPrefix(getResponse, "OK ")
+	receivedContent = strings.TrimSuffix(receivedContent, "\n")
+
+	// Verify
+	if receivedContent != payload {
+		// Truncate for display
+		dispRecv := receivedContent
+		if len(dispRecv) > 50 {
+			dispRecv = dispRecv[:50] + "..."
+		}
+		dispExp := payload
+		if len(dispExp) > 50 {
+			dispExp = dispExp[:50] + "..."
+		}
+		t.Errorf("Content mismatch!\nExpected: %s\nReceived: %s", dispExp, dispRecv)
+	} else {
+		t.Logf("Content verification SUCCESS. Length: %d", len(receivedContent))
+	}
+
+	t.Logf("GET Latency: %v", getDuration)
+}
+
 func TestWriteThroughput(t *testing.T) {
 	// Configuration
 	const clients = 10

@@ -444,6 +444,7 @@ func (ls *LeaderServer) reportToClient(meta *ClientMetadata, code string, report
 		code_map["ALERT"] = "[ALERT]: "
 		code_map["WARNING"] = "[WARNING]: "
 		code_map["ERROR"] = "[ERROR]: "
+		code_map["DEBUG"] = "[DEBUG]: "
 		meta.Mu.Lock()
 		defer meta.Mu.Unlock()
 		fmt.Fprint(meta.Conn, code_map[code], report_msg)
@@ -512,4 +513,153 @@ func (ls *LeaderServer) getFileCounts() map[string]int {
 		fileCounts[ip] = int(resp.FileCount)
 	}
 	return fileCounts
+}
+func (ls *LeaderServer) paralelWrite(file_id string, data []byte, meta *ClientMetadata) error {
+	// 1. Validation and Setup
+	if _, err := uuid.Parse(file_id); err != nil {
+		return fmt.Errorf("invalid file_id: %s", file_id)
+	}
+
+	hr := ls.grpc_handler.Hr
+	startIndex, err := hr.FindContainingNodeIndex(file_id)
+	if err != nil {
+		return err
+	}
+
+	hashBytes := sha256.Sum256(data)
+	fileHash := hex.EncodeToString(hashBytes[:])
+
+	// Define message struct for our logger channel
+	type logMsg struct {
+		level string
+		text  string
+	}
+
+	// 2. Create Channels
+	// Buffered nodesCh prevents the generator from blocking if workers are slow initially
+	nodesCh := make(chan string, ls.tolerance*2)
+	logCh := make(chan logMsg, ls.tolerance*10) // Buffer for bursty logs
+	resultCh := make(chan bool)                 // True = success, False = failure
+
+	// 3. Node Generator (Producer)
+	// Dedicated goroutine to walk the ring and fill the queue with unique nodes
+	go func() {
+		defer close(nodesCh)
+
+		currIndex := startIndex
+		visited := make(map[string]bool)
+		fullCircle := false
+
+		// Keep generating nodes until we hit full circle
+		for !fullCircle {
+			nodeAddr, err := hr.GetAddrFromIndex(currIndex)
+
+			// Move index forward
+			currIndex = hr.Walk(currIndex)
+			if currIndex == startIndex {
+				fullCircle = true
+			}
+
+			if err != nil {
+				continue
+			}
+
+			if !visited[nodeAddr] {
+				visited[nodeAddr] = true
+				nodesCh <- nodeAddr // Send to workers
+			}
+		}
+	}()
+
+	// 4. Workers (Consumers)
+	// Spawn exactly 'tolerance' workers. Each must secure 1 success or die trying.
+	for i := 0; i < ls.tolerance; i++ {
+		go func() {
+			start := time.Now()
+			for nodeAddr := range nodesCh {
+				// -- Connection Phase --
+				conn, err := hr.GetOrCreateConnection(nodeAddr)
+				if err != nil {
+					logCh <- logMsg{"ERROR", fmt.Sprintf("Failed to connect to node %s: %v", nodeAddr, err)}
+					continue // Automatically pulls the next node from nodesCh
+				}
+				connDuration := time.Since(start)
+				// -- Store Phase --
+				logCh <- logMsg{"ALERT", fmt.Sprintf("Storing file %s on node %s...", file_id, nodeAddr)}
+				client := nodecommunication.NewNodeServiceClient(conn)
+				storectx, cancel := context.WithTimeout(context.Background(), ls.call_timeout)
+				t2 := time.Now()
+				hash, err := client.StoreFile(storectx, &nodecommunication.File{
+					FileId:      file_id,
+					FileContent: data,
+				})
+				cancel()
+				writeDuration := time.Since(t2)
+				logCh <- logMsg{"DEBUG", fmt.Sprintf("Node %s: ConnTime=%v, WriteTime=%v", nodeAddr, connDuration, writeDuration)}
+				// -- Validation Phase --
+				if err != nil {
+					logCh <- logMsg{"WARNING", fmt.Sprintf("Failed to store on node %s: %v", nodeAddr, err)}
+					continue
+				}
+
+				if hash.FileHash != fileHash {
+					logCh <- logMsg{"WARNING", fmt.Sprintf("Hash mismatch on node %s", nodeAddr)}
+					continue
+				}
+
+				// -- Success --
+				logCh <- logMsg{"ALERT", fmt.Sprintf("Successfully stored on %s", nodeAddr)}
+				resultCh <- true
+				return // Worker done
+			}
+
+			// If the loop breaks, nodesCh is closed and empty (ring exhausted)
+			resultCh <- false
+		}()
+	}
+
+	// 5. Coordinator (Main Thread)
+	// Listen to both logs and results until all workers have reported back.
+	successCount := 0
+	workersFinished := 0
+
+	for workersFinished < ls.tolerance {
+		select {
+		case msg := <-logCh:
+			// Process logs in real-time as they arrive
+			ls.reportToClient(meta, msg.level, msg.text+"\n")
+
+		case success := <-resultCh:
+			// A worker has finished (either success or ran out of nodes)
+			if success {
+				successCount++
+			}
+			workersFinished++
+		}
+	}
+
+	// Drain any remaining logs that might be buffered
+	close(logCh)
+	for msg := range logCh {
+		ls.reportToClient(meta, msg.level, msg.text+"\n")
+	}
+
+	// 6. Final Reporting
+	if successCount < ls.tolerance {
+		ls.reportToClient(meta, "ERROR", fmt.Sprintf("Failed to achieve replication. Only %d replicas created.\n", successCount))
+		if ls.simple_mode {
+			meta.Mu.Lock()
+			fmt.Fprintf(meta.Conn, "ERROR\n")
+			meta.Mu.Unlock()
+		}
+	} else {
+		if ls.simple_mode {
+			meta.Mu.Lock()
+			fmt.Fprintf(meta.Conn, "OK\n")
+			meta.Mu.Unlock()
+		}
+		ls.reportToClient(meta, "SUCCESS", fmt.Sprintf("File %s stored successfully with %d replicas.\n", file_id, successCount))
+	}
+
+	return nil
 }

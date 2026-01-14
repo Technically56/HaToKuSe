@@ -1,7 +1,7 @@
 leader:
   client_port: "6000"
   grpc_port: "50051"
-
+  
 node:
   id: "node-1"
   port: "50052"
