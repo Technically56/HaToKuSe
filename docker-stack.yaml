@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  leader:
+    image: hatokuse:latest 
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+    ports:
+      - "6000:6000"
+    networks:
+      - hatokuse_net
+    command: [ "-mode=leader", "-simple=true" ]
+
+  node:
+    image: hatokuse:latest
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: on-failure
+    depends_on:
+      - leader
+    environment:
+      - PUID=1000
+      - PGID=1000
+    networks:
+      - hatokuse_net
+    command: [ "-mode=node", "-port=50052" ]
+
+networks:
+  hatokuse_net:
+    driver: overlay
