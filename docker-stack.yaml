@@ -7,7 +7,7 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.role == manager
+          - node.labels.type == leader
       restart_policy:
         condition: on-failure
     ports:
@@ -19,7 +19,10 @@ services:
   node:
     image: hatokuse:latest
     deploy:
-      replicas: 3
+      replicas: 7
+      placement:
+        constraints:
+          - node.labels.type == worker
       restart_policy:
         condition: on-failure
     depends_on:
