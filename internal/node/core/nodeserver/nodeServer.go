@@ -33,7 +33,7 @@ type NodeServer struct {
 	cancelStop context.CancelFunc
 }
 
-func NewNodeServer(cfg *config.Config, file_manager *fm.FileManager, node_id string) (*NodeServer, error) {
+func NewNodeServer(cfg *config.Config, file_manager fm.FileManagerInterface, node_id string) (*NodeServer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	ns := &NodeServer{

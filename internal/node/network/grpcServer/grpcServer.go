@@ -12,10 +12,10 @@ import (
 
 type NodeGrpcServer struct {
 	pb.UnimplementedNodeServiceServer
-	fm *fm.FileManager
+	fm fm.FileManagerInterface
 }
 
-func NewNodeGrpcServer(fileManager *fm.FileManager) *NodeGrpcServer {
+func NewNodeGrpcServer(fileManager fm.FileManagerInterface) *NodeGrpcServer {
 	return &NodeGrpcServer{
 		fm: fileManager,
 	}

@@ -4,7 +4,7 @@ services:
     leader:
         build: .
         container_name: leader
-        command: [ "-mode=leader", "-simple=true" ]
+        command: [ "-mode=leader", "-simple=false" ]
         ports:
             - "6000:6000"
         networks:
@@ -14,7 +14,7 @@ services:
         build: .
         command: [ "-mode=node", "-port=50052" ]
         deploy:
-            replicas: 3
+            replicas: 7
         depends_on:
             - leader
         environment:
